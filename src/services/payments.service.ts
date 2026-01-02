@@ -7,13 +7,12 @@ import { calculateInvoiceStatus } from '@/lib/state-machines'
 export interface CreatePaymentInput {
   invoiceId: string
   amountSyp: number
-  method: 'CASH' | 'CARD' | 'TRANSFER'
   paymentDate: Date
 }
 
 export async function createPayment(input: CreatePaymentInput, actorId: string) {
   if (input.amountSyp <= 0) {
-    throw new Error('Payment amount must be positive')
+    throw new Error('مبلغ الدفعة يجب أن يكون أكبر من صفر')
   }
 
   const invoice = await prisma.invoice.findUnique({
@@ -24,21 +23,18 @@ export async function createPayment(input: CreatePaymentInput, actorId: string) 
   })
 
   if (!invoice) {
-    throw new Error('Invoice not found')
+    throw new Error('الفاتورة غير موجودة')
   }
 
   if (invoice.status === InvoiceStatus.PAID) {
-    throw new Error('Cannot add payment to fully paid invoice')
+    throw new Error('لا يمكن إضافة دفعة لفاتورة مدفوعة بالكامل')
   }
 
   const totalPaid = invoice.paidAmountSyp.toNumber() + input.amountSyp
+  const outstanding = invoice.totalAmountSyp.toNumber() - invoice.paidAmountSyp.toNumber()
 
   if (totalPaid > invoice.totalAmountSyp.toNumber()) {
-    throw new Error(
-      `Payment amount exceeds invoice balance. Outstanding: ${
-        invoice.totalAmountSyp.toNumber() - invoice.paidAmountSyp.toNumber()
-      }`
-    )
+    throw new Error(`مبلغ الدفعة يتجاوز المبلغ المتبقي. المتبقي: ${outstanding.toLocaleString('ar-SY')} ل.س`)
   }
 
   return prisma.$transaction(async tx => {
@@ -46,7 +42,7 @@ export async function createPayment(input: CreatePaymentInput, actorId: string) 
       data: {
         invoiceId: input.invoiceId,
         amountSyp: input.amountSyp,
-        method: input.method,
+        method: 'CASH',
         paymentDate: input.paymentDate,
         createdBy: actorId
       },
@@ -217,5 +213,83 @@ export async function getPaymentById(paymentId: string) {
         }
       }
     }
+  })
+}
+
+export async function voidPayment(paymentId: string, reason: string, actorId: string) {
+  if (!reason || reason.trim().length === 0) {
+    throw new Error('سبب الإلغاء مطلوب')
+  }
+
+  const payment = await prisma.payment.findUnique({
+    where: { id: paymentId },
+    include: {
+      invoice: true
+    }
+  })
+
+  if (!payment) {
+    throw new Error('الدفعة غير موجودة')
+  }
+
+  if ((payment as any).status === 'VOIDED') {
+    throw new Error('الدفعة ملغاة مسبقاً')
+  }
+
+  return prisma.$transaction(async tx => {
+    // Void the payment
+    const voidedPayment = await tx.payment.update({
+      where: { id: paymentId },
+      data: {
+        status: 'VOIDED',
+        voidReason: reason.trim(),
+        voidedAt: new Date()
+      }
+    })
+
+    // Recalculate invoice paid amount (excluding voided payments)
+    const activePayments = await tx.payment.findMany({
+      where: {
+        invoiceId: payment.invoiceId,
+        status: 'ACTIVE'
+      }
+    })
+
+    const newPaidAmount = activePayments.reduce((sum, p) => sum + (p as any).amountSyp.toNumber(), 0)
+
+    // Update invoice
+    const invoice = payment.invoice
+
+    const newStatus = calculateInvoiceStatus((invoice as any).totalAmountSyp.toNumber(), newPaidAmount)
+
+    await tx.invoice.update({
+      where: { id: payment.invoiceId },
+      data: {
+        paidAmountSyp: newPaidAmount,
+        status: newStatus
+      }
+    })
+
+    // Audit log
+    await logAudit(
+      {
+        actorId,
+        action: 'PAYMENT_VOIDED',
+        entityType: 'Payment',
+        entityId: paymentId,
+        before: {
+          status: 'ACTIVE',
+          amountSyp: (payment as any).amountSyp.toString()
+        },
+        after: {
+          status: 'VOIDED',
+          voidReason: reason.trim(),
+          amountSyp: (payment as any).amountSyp.toString()
+        }
+      },
+      tx
+    )
+
+    return voidedPayment
   })
 }

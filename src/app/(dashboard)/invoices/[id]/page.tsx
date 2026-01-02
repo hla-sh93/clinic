@@ -15,7 +15,6 @@ import Chip from '@mui/material/Chip'
 import CircularProgress from '@mui/material/CircularProgress'
 import Alert from '@mui/material/Alert'
 import Grid from '@mui/material/Grid'
-import Divider from '@mui/material/Divider'
 import Table from '@mui/material/Table'
 import TableBody from '@mui/material/TableBody'
 import TableCell from '@mui/material/TableCell'
@@ -30,10 +29,13 @@ import TextField from '@mui/material/TextField'
 import InputAdornment from '@mui/material/InputAdornment'
 import LinearProgress from '@mui/material/LinearProgress'
 
+import { useLanguage } from '@/contexts/LanguageContext'
+
 type Payment = {
   id: string
-  amount: string
+  amountSyp: string
   paymentDate: string
+  status: string
   creator: {
     id: string
     fullName: string
@@ -42,15 +44,14 @@ type Payment = {
 
 type Invoice = {
   id: string
-  totalAmount: string
-  paidAmount: string
+  totalAmountSyp: string
+  paidAmountSyp: string
   status: string
   createdAt: string
   patient: {
     id: string
     fullName: string
     phone: string | null
-    email: string | null
   }
   visit: {
     id: string
@@ -73,17 +74,22 @@ type Invoice = {
 }
 
 const statusColors: Record<string, 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning'> = {
-  DRAFT: 'default',
-  ISSUED: 'warning',
-  PARTIALLY_PAID: 'info',
-  PAID: 'success',
-  VOID: 'error'
+  UNPAID: 'error',
+  PARTIALLY_PAID: 'warning',
+  PAID: 'success'
+}
+
+const statusLabels: Record<string, string> = {
+  UNPAID: 'غير مدفوعة',
+  PARTIALLY_PAID: 'مدفوعة جزئياً',
+  PAID: 'مدفوعة بالكامل'
 }
 
 const InvoiceDetailPage = () => {
   const router = useRouter()
   const params = useParams()
   const { data: session } = useSession()
+  const { t } = useLanguage()
   const invoiceId = params.id as string
 
   const [invoice, setInvoice] = useState<Invoice | null>(null)
@@ -137,9 +143,9 @@ const InvoiceDetailPage = () => {
     return (
       <Card>
         <CardContent>
-          <Alert severity='error'>Only managers can access the financial module.</Alert>
+          <Alert severity='error'>فقط المدراء يمكنهم الوصول للوحدة المالية</Alert>
           <Button variant='outlined' sx={{ mt: 2 }} onClick={() => router.push('/dashboard')}>
-            Back to Dashboard
+            {t('common.back')}
           </Button>
         </CardContent>
       </Card>
@@ -158,7 +164,7 @@ const InvoiceDetailPage = () => {
   }
 
   const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
+    return new Date(dateString).toLocaleDateString('ar-SY', {
       year: 'numeric',
       month: 'long',
       day: 'numeric'
@@ -166,7 +172,7 @@ const InvoiceDetailPage = () => {
   }
 
   const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleString('en-US', {
+    return new Date(dateString).toLocaleString('ar-SY', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
@@ -177,7 +183,7 @@ const InvoiceDetailPage = () => {
 
   const handlePaymentClick = () => {
     if (!paymentAmount || parseFloat(paymentAmount) <= 0) {
-      setPaymentError('Please enter a valid payment amount')
+      setPaymentError('الرجاء إدخال مبلغ صحيح')
 
       return
     }
@@ -196,7 +202,8 @@ const InvoiceDetailPage = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           invoiceId,
-          amount: parseFloat(paymentAmount),
+          amountSyp: parseFloat(paymentAmount),
+          method: 'CASH',
           paymentDate: new Date(paymentDate).toISOString()
         })
       })
@@ -232,7 +239,7 @@ const InvoiceDetailPage = () => {
       <Alert severity='error' sx={{ mb: 4 }}>
         {error}
         <Button sx={{ ml: 2 }} onClick={() => router.push('/invoices')}>
-          Back to Invoices
+          العودة للفواتير
         </Button>
       </Alert>
     )
@@ -242,191 +249,218 @@ const InvoiceDetailPage = () => {
     return null
   }
 
-  const balance = parseFloat(invoice.totalAmount) - parseFloat(invoice.paidAmount)
-  const paymentProgress = (parseFloat(invoice.paidAmount) / parseFloat(invoice.totalAmount)) * 100
-  const canAddPayment = ['ISSUED', 'PARTIALLY_PAID'].includes(invoice.status)
+  const balance = parseFloat(invoice.totalAmountSyp) - parseFloat(invoice.paidAmountSyp)
+  const paymentProgress = (parseFloat(invoice.paidAmountSyp) / parseFloat(invoice.totalAmountSyp)) * 100
+  const canAddPayment = ['UNPAID', 'PARTIALLY_PAID'].includes(invoice.status)
 
   return (
     <Box>
       {/* Header */}
-      <Card sx={{ mb: 4 }}>
-        <CardContent>
-          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <Box>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-                <Typography variant='h4'>Invoice Details</Typography>
-                <Chip label={invoice.status.replace('_', ' ')} color={statusColors[invoice.status] || 'default'} />
-              </Box>
-              <Typography variant='body2' color='text.secondary'>
-                Created on {formatDate(invoice.createdAt)}
-              </Typography>
-            </Box>
-            <Box sx={{ display: 'flex', gap: 2 }}>
-              <Button variant='outlined' onClick={() => router.push('/invoices')}>
-                Back to Invoices
-              </Button>
-              {canAddPayment && (
-                <Button variant='contained' onClick={() => setPaymentDialogOpen(true)}>
-                  Add Payment
-                </Button>
-              )}
-            </Box>
-          </Box>
-        </CardContent>
-      </Card>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+        <Box>
+          <Typography variant='h4' sx={{ mb: 1 }}>
+            تفاصيل الفاتورة
+          </Typography>
+          <Typography variant='body2' color='text.secondary'>
+            تاريخ الإنشاء: {formatDate(invoice.createdAt)}
+          </Typography>
+        </Box>
+        <Box sx={{ display: 'flex', gap: 2 }}>
+          <Button variant='outlined' onClick={() => router.push('/invoices')}>
+            العودة للفواتير
+          </Button>
+          {canAddPayment && (
+            <Button variant='contained' color='success' onClick={() => setPaymentDialogOpen(true)}>
+              إضافة دفعة
+            </Button>
+          )}
+        </Box>
+      </Box>
 
-      <Grid container spacing={4}>
-        {/* Financial Summary */}
-        <Grid item xs={12} md={6}>
-          <Card>
+      {/* Summary Cards */}
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        <Grid item xs={12} sm={4}>
+          <Card
+            sx={{ bgcolor: 'rgba(115, 103, 240, 0.15)', border: '1px solid', borderColor: 'rgba(115, 103, 240, 0.3)' }}
+          >
             <CardContent>
-              <Typography variant='h6' sx={{ mb: 3 }}>
-                Financial Summary
+              <Typography variant='body2' sx={{ color: 'rgb(115, 103, 240)', opacity: 0.85, mb: 1 }}>
+                إجمالي الفاتورة
               </Typography>
-
-              <Box sx={{ mb: 3 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                  <Typography variant='body2' color='text.secondary'>
-                    Payment Progress
-                  </Typography>
-                  <Typography variant='body2'>{Math.round(paymentProgress)}%</Typography>
-                </Box>
-                <LinearProgress
-                  variant='determinate'
-                  value={paymentProgress}
-                  color={paymentProgress >= 100 ? 'success' : 'primary'}
-                  sx={{ height: 8, borderRadius: 4 }}
-                />
-              </Box>
-
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant='body1'>Total Amount</Typography>
-                  <Typography variant='h6'>{formatCurrency(invoice.totalAmount)}</Typography>
-                </Box>
-
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant='body1' color='success.main'>
-                    Paid Amount
-                  </Typography>
-                  <Typography variant='h6' color='success.main'>
-                    {formatCurrency(invoice.paidAmount)}
-                  </Typography>
-                </Box>
-
-                <Divider />
-
-                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <Typography variant='body1' fontWeight={600}>
-                    Balance Due
-                  </Typography>
-                  <Typography variant='h5' color={balance > 0 ? 'error.main' : 'success.main'}>
-                    {formatCurrency(balance)}
-                  </Typography>
-                </Box>
-              </Box>
+              <Typography variant='h4' sx={{ color: 'rgb(115, 103, 240)' }}>
+                {formatCurrency(invoice.totalAmountSyp)}
+              </Typography>
             </CardContent>
           </Card>
         </Grid>
+        <Grid item xs={12} sm={4}>
+          <Card
+            sx={{ bgcolor: 'rgba(40, 199, 111, 0.15)', border: '1px solid', borderColor: 'rgba(40, 199, 111, 0.3)' }}
+          >
+            <CardContent>
+              <Typography variant='body2' sx={{ color: 'rgb(40, 199, 111)', opacity: 0.85, mb: 1 }}>
+                المبلغ المدفوع
+              </Typography>
+              <Typography variant='h4' sx={{ color: 'rgb(40, 199, 111)' }}>
+                {formatCurrency(invoice.paidAmountSyp)}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+        <Grid item xs={12} sm={4}>
+          <Card
+            sx={{
+              bgcolor: balance > 0 ? 'rgba(234, 84, 85, 0.15)' : 'rgba(40, 199, 111, 0.15)',
+              border: '1px solid',
+              borderColor: balance > 0 ? 'rgba(234, 84, 85, 0.3)' : 'rgba(40, 199, 111, 0.3)'
+            }}
+          >
+            <CardContent>
+              <Typography
+                variant='body2'
+                sx={{ color: balance > 0 ? 'rgb(234, 84, 85)' : 'rgb(40, 199, 111)', opacity: 0.85, mb: 1 }}
+              >
+                المبلغ المتبقي
+              </Typography>
+              <Typography variant='h4' sx={{ color: balance > 0 ? 'rgb(234, 84, 85)' : 'rgb(40, 199, 111)' }}>
+                {formatCurrency(balance)}
+              </Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+      </Grid>
 
+      {/* Progress Bar */}
+      <Card sx={{ mb: 4 }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <Typography variant='h6'>حالة الدفع</Typography>
+              <Chip
+                label={statusLabels[invoice.status] || invoice.status}
+                color={statusColors[invoice.status] || 'default'}
+                size='small'
+              />
+            </Box>
+            <Typography variant='h6' color='primary.main'>
+              {Math.round(paymentProgress)}%
+            </Typography>
+          </Box>
+          <LinearProgress
+            variant='determinate'
+            value={paymentProgress}
+            color={paymentProgress >= 100 ? 'success' : 'primary'}
+            sx={{ height: 12, borderRadius: 6 }}
+          />
+        </CardContent>
+      </Card>
+
+      <Grid container spacing={3}>
         {/* Patient & Visit Info */}
         <Grid item xs={12} md={6}>
-          <Card>
+          <Card sx={{ height: '100%' }}>
             <CardContent>
-              <Typography variant='h6' sx={{ mb: 3 }}>
-                Patient & Visit Information
+              <Typography variant='h6' sx={{ mb: 3, borderBottom: 1, borderColor: 'divider', pb: 1 }}>
+                معلومات المريض والزيارة
               </Typography>
 
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                <Box>
-                  <Typography variant='body2' color='text.secondary'>
-                    Patient
+              <Grid container spacing={2}>
+                <Grid item xs={6}>
+                  <Typography variant='body2' color='text.secondary' gutterBottom>
+                    المريض
                   </Typography>
                   <Typography
                     variant='body1'
-                    sx={{ cursor: 'pointer', color: 'primary.main' }}
+                    fontWeight={500}
+                    sx={{ cursor: 'pointer', color: 'primary.main', '&:hover': { textDecoration: 'underline' } }}
                     onClick={() => router.push(`/patients/${invoice.patient.id}`)}
                   >
                     {invoice.patient.fullName}
                   </Typography>
                   {invoice.patient.phone && (
-                    <Typography variant='body2' color='text.secondary'>
+                    <Typography variant='caption' color='text.secondary' display='block'>
                       {invoice.patient.phone}
                     </Typography>
                   )}
-                </Box>
+                </Grid>
 
-                <Divider />
-
-                <Box>
-                  <Typography variant='body2' color='text.secondary'>
-                    Treatment
+                <Grid item xs={6}>
+                  <Typography variant='body2' color='text.secondary' gutterBottom>
+                    الطبيب
                   </Typography>
-                  <Typography variant='body1'>{invoice.visit.medicalCase.name}</Typography>
-                </Box>
-
-                <Box>
-                  <Typography variant='body2' color='text.secondary'>
-                    Dentist
+                  <Typography variant='body1' fontWeight={500}>
+                    {invoice.visit.dentist.fullName}
                   </Typography>
-                  <Typography variant='body1'>{invoice.visit.dentist.fullName}</Typography>
-                </Box>
+                </Grid>
 
-                <Box>
-                  <Typography variant='body2' color='text.secondary'>
-                    Appointment Date
+                <Grid item xs={6}>
+                  <Typography variant='body2' color='text.secondary' gutterBottom>
+                    العلاج
                   </Typography>
-                  <Typography variant='body1'>{formatDateTime(invoice.visit.appointment.startTime)}</Typography>
-                </Box>
-              </Box>
+                  <Typography variant='body1' fontWeight={500}>
+                    {invoice.visit.medicalCase.name}
+                  </Typography>
+                </Grid>
+
+                <Grid item xs={6}>
+                  <Typography variant='body2' color='text.secondary' gutterBottom>
+                    تاريخ الموعد
+                  </Typography>
+                  <Typography variant='body1' fontWeight={500}>
+                    {formatDateTime(invoice.visit.appointment.startTime)}
+                  </Typography>
+                </Grid>
+              </Grid>
             </CardContent>
           </Card>
         </Grid>
 
         {/* Payment History */}
-        <Grid item xs={12}>
-          <Card>
+        <Grid item xs={12} md={6}>
+          <Card sx={{ height: '100%' }}>
             <CardContent>
-              <Typography variant='h6' sx={{ mb: 3 }}>
-                Payment History
+              <Typography variant='h6' sx={{ mb: 3, borderBottom: 1, borderColor: 'divider', pb: 1 }}>
+                سجل الدفعات
               </Typography>
 
               {invoice.payments.length === 0 ? (
                 <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <Typography color='text.secondary'>No payments recorded yet</Typography>
+                  <Typography color='text.secondary' sx={{ mb: 2 }}>
+                    لا توجد دفعات مسجلة بعد
+                  </Typography>
                   {canAddPayment && (
-                    <Button variant='contained' sx={{ mt: 2 }} onClick={() => setPaymentDialogOpen(true)}>
-                      Add First Payment
+                    <Button variant='contained' color='success' onClick={() => setPaymentDialogOpen(true)}>
+                      إضافة أول دفعة
                     </Button>
                   )}
                 </Box>
               ) : (
                 <TableContainer>
-                  <Table>
+                  <Table size='small'>
                     <TableHead>
                       <TableRow>
-                        <TableCell>Date</TableCell>
-                        <TableCell>Recorded By</TableCell>
-                        <TableCell align='right'>Amount</TableCell>
+                        <TableCell>التاريخ</TableCell>
+                        <TableCell>المستلم</TableCell>
+                        <TableCell align='right'>المبلغ</TableCell>
                       </TableRow>
                     </TableHead>
                     <TableBody>
                       {invoice.payments.map(payment => (
-                        <TableRow key={payment.id}>
+                        <TableRow key={payment.id} hover>
                           <TableCell>{formatDate(payment.paymentDate)}</TableCell>
                           <TableCell>{payment.creator.fullName}</TableCell>
                           <TableCell align='right' sx={{ color: 'success.main', fontWeight: 600 }}>
-                            {formatCurrency(payment.amount)}
+                            {formatCurrency(payment.amountSyp)}
                           </TableCell>
                         </TableRow>
                       ))}
-                      <TableRow>
+                      <TableRow sx={{ bgcolor: 'action.hover' }}>
                         <TableCell colSpan={2}>
-                          <Typography fontWeight={600}>Total Paid</Typography>
+                          <Typography fontWeight={600}>إجمالي المدفوع</Typography>
                         </TableCell>
                         <TableCell align='right'>
                           <Typography fontWeight={600} color='success.main'>
-                            {formatCurrency(invoice.paidAmount)}
+                            {formatCurrency(invoice.paidAmountSyp)}
                           </Typography>
                         </TableCell>
                       </TableRow>
@@ -441,11 +475,11 @@ const InvoiceDetailPage = () => {
 
       {/* Add Payment Dialog */}
       <Dialog open={paymentDialogOpen} onClose={() => setPaymentDialogOpen(false)} maxWidth='sm' fullWidth>
-        <DialogTitle>Add Payment</DialogTitle>
+        <DialogTitle>إضافة دفعة جديدة</DialogTitle>
         <DialogContent>
           <Box sx={{ pt: 1 }}>
             <Alert severity='info' sx={{ mb: 3 }}>
-              Outstanding balance: <strong>{formatCurrency(balance)}</strong>
+              المبلغ المتبقي: <strong>{formatCurrency(balance)}</strong>
             </Alert>
 
             {paymentError && (
@@ -458,22 +492,22 @@ const InvoiceDetailPage = () => {
               <Grid item xs={12}>
                 <TextField
                   fullWidth
-                  label='Payment Amount'
+                  label='مبلغ الدفعة'
                   type='number'
                   value={paymentAmount}
                   onChange={e => setPaymentAmount(e.target.value)}
                   InputProps={{
-                    startAdornment: <InputAdornment position='start'>$</InputAdornment>
+                    startAdornment: <InputAdornment position='start'>ل.س</InputAdornment>
                   }}
-                  inputProps={{ min: 0.01, max: balance, step: '0.01' }}
+                  inputProps={{ min: 1, max: balance, step: '1' }}
                   disabled={submitting}
-                  helperText={`Maximum: ${formatCurrency(balance)}`}
+                  helperText={`الحد الأقصى: ${formatCurrency(balance)}`}
                 />
               </Grid>
               <Grid item xs={12}>
                 <TextField
                   fullWidth
-                  label='Payment Date'
+                  label='تاريخ الدفع'
                   type='date'
                   value={paymentDate}
                   onChange={e => setPaymentDate(e.target.value)}
@@ -486,49 +520,50 @@ const InvoiceDetailPage = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setPaymentDialogOpen(false)} disabled={submitting}>
-            Cancel
+            إلغاء
           </Button>
           <Button
             onClick={handlePaymentClick}
             variant='contained'
+            color='success'
             disabled={submitting || !paymentAmount}
             startIcon={submitting && <CircularProgress size={20} />}
           >
-            {submitting ? 'Processing...' : 'Add Payment'}
+            {submitting ? 'جاري المعالجة...' : 'إضافة الدفعة'}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* Confirmation Dialog */}
       <Dialog open={confirmDialogOpen} onClose={() => !submitting && setConfirmDialogOpen(false)} maxWidth='sm'>
-        <DialogTitle>Confirm Payment</DialogTitle>
+        <DialogTitle>تأكيد الدفعة</DialogTitle>
         <DialogContent>
           <Alert severity='warning' sx={{ mb: 2 }}>
             <Typography variant='subtitle2' sx={{ mb: 1 }}>
-              You are about to record a payment
+              أنت على وشك تسجيل دفعة جديدة
             </Typography>
             <Typography variant='body2'>
-              <strong>Amount:</strong> {formatCurrency(parseFloat(paymentAmount || '0'))}
+              <strong>المبلغ:</strong> {formatCurrency(parseFloat(paymentAmount || '0'))}
               <br />
-              <strong>Date:</strong> {formatDate(paymentDate)}
+              <strong>التاريخ:</strong> {formatDate(paymentDate)}
             </Typography>
           </Alert>
           <Typography variant='body2' color='text.secondary'>
-            This action will update the invoice status and cannot be undone. Are you sure you want to proceed?
+            هذا الإجراء سيحدث حالة الفاتورة ولا يمكن التراجع عنه. هل أنت متأكد من المتابعة؟
           </Typography>
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfirmDialogOpen(false)} disabled={submitting}>
-            Cancel
+            إلغاء
           </Button>
           <Button
             onClick={handleConfirmPayment}
             variant='contained'
-            color='primary'
+            color='success'
             disabled={submitting}
             startIcon={submitting && <CircularProgress size={20} />}
           >
-            {submitting ? 'Processing...' : 'Confirm Payment'}
+            {submitting ? 'جاري المعالجة...' : 'تأكيد الدفعة'}
           </Button>
         </DialogActions>
       </Dialog>

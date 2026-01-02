@@ -16,7 +16,6 @@ import TableCell from '@mui/material/TableCell'
 import TableContainer from '@mui/material/TableContainer'
 import TableHead from '@mui/material/TableHead'
 import TableRow from '@mui/material/TableRow'
-import Chip from '@mui/material/Chip'
 import Box from '@mui/material/Box'
 import CircularProgress from '@mui/material/CircularProgress'
 import Alert from '@mui/material/Alert'
@@ -36,9 +35,9 @@ import { useLanguage } from '@/contexts/LanguageContext'
 
 type Payment = {
   id: string
-  amount: string
-  method: string
-  createdAt: string
+  amountSyp: string
+  paymentDate: string
+  status: string
   invoice: {
     id: string
     patient: {
@@ -49,9 +48,12 @@ type Payment = {
       medicalCase: {
         name: string
       }
+      dentist: {
+        fullName: string
+      }
     }
   }
-  createdBy: {
+  creator: {
     fullName: string
   }
 }
@@ -65,7 +67,6 @@ const PaymentsPage = () => {
   const [error, setError] = useState('')
 
   const [filters, setFilters] = useState({
-    method: '',
     startDate: '',
     endDate: ''
   })
@@ -82,14 +83,13 @@ const PaymentsPage = () => {
   const [paymentForm, setPaymentForm] = useState({
     invoiceId: '',
     amount: '',
-    method: 'CASH',
     paymentDate: new Date().toISOString().split('T')[0]
   })
 
   const fetchUnpaidInvoices = async () => {
     try {
       setLoadingInvoices(true)
-      const response = await fetch('/api/invoices?status=ISSUED,PARTIALLY_PAID')
+      const response = await fetch('/api/invoices?outstanding=true')
 
       if (response.ok) {
         const data = await response.json()
@@ -105,7 +105,7 @@ const PaymentsPage = () => {
 
   const handleAddPayment = async () => {
     if (!paymentForm.invoiceId || !paymentForm.amount) {
-      setSaveError('Please select an invoice and enter an amount')
+      setSaveError('الرجاء اختيار فاتورة وإدخال المبلغ')
 
       return
     }
@@ -119,9 +119,8 @@ const PaymentsPage = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           invoiceId: paymentForm.invoiceId,
-          amount: parseFloat(paymentForm.amount),
-          method: paymentForm.method,
-          paymentDate: paymentForm.paymentDate
+          amountSyp: parseFloat(paymentForm.amount),
+          paymentDate: new Date(paymentForm.paymentDate).toISOString()
         })
       })
 
@@ -132,7 +131,7 @@ const PaymentsPage = () => {
       }
 
       setAddDialogOpen(false)
-      setPaymentForm({ invoiceId: '', amount: '', method: 'CASH', paymentDate: new Date().toISOString().split('T')[0] })
+      setPaymentForm({ invoiceId: '', amount: '', paymentDate: new Date().toISOString().split('T')[0] })
       fetchPayments()
     } catch (err: any) {
       setSaveError(err.message)
@@ -150,7 +149,7 @@ const PaymentsPage = () => {
   const selectedInvoice = unpaidInvoices.find(inv => inv.id === paymentForm.invoiceId)
 
   const remainingBalance = selectedInvoice
-    ? parseFloat(selectedInvoice.totalAmount) - parseFloat(selectedInvoice.paidAmount)
+    ? parseFloat(selectedInvoice.totalAmountSyp) - parseFloat(selectedInvoice.paidAmountSyp)
     : 0
 
   const fetchPayments = async () => {
@@ -158,7 +157,6 @@ const PaymentsPage = () => {
       setLoading(true)
       const params = new URLSearchParams()
 
-      if (filters.method) params.append('method', filters.method)
       if (filters.startDate) params.append('startDate', filters.startDate)
       if (filters.endDate) params.append('endDate', filters.endDate)
 
@@ -206,10 +204,10 @@ const PaymentsPage = () => {
   }
 
   const clearFilters = () => {
-    setFilters({ method: '', startDate: '', endDate: '' })
+    setFilters({ startDate: '', endDate: '' })
   }
 
-  const totalPayments = payments.reduce((sum, payment) => sum + parseFloat(payment.amount), 0)
+  const totalPayments = payments.reduce((sum, payment) => sum + parseFloat(payment.amountSyp), 0)
 
   if (!isManager) {
     return (
@@ -249,20 +247,6 @@ const PaymentsPage = () => {
           <Grid container spacing={2}>
             <Grid item xs={12} sm={4}>
               <TextField
-                select
-                fullWidth
-                label={t('payments.paymentMethod')}
-                value={filters.method}
-                onChange={e => setFilters({ ...filters, method: e.target.value })}
-                size='small'
-              >
-                <MenuItem value=''>{t('payments.allMethods')}</MenuItem>
-                <MenuItem value='CASH'>{t('payments.cash')}</MenuItem>
-                <MenuItem value='INSTALLMENTS'>{t('payments.installments')}</MenuItem>
-              </TextField>
-            </Grid>
-            <Grid item xs={12} sm={3}>
-              <TextField
                 type='date'
                 fullWidth
                 label={t('appointments.fromDate')}
@@ -272,7 +256,7 @@ const PaymentsPage = () => {
                 InputLabelProps={{ shrink: true }}
               />
             </Grid>
-            <Grid item xs={12} sm={3}>
+            <Grid item xs={12} sm={4}>
               <TextField
                 type='date'
                 fullWidth
@@ -283,7 +267,7 @@ const PaymentsPage = () => {
                 InputLabelProps={{ shrink: true }}
               />
             </Grid>
-            <Grid item xs={12} sm={2}>
+            <Grid item xs={12} sm={4}>
               <Button variant='outlined' onClick={clearFilters} fullWidth sx={{ height: '40px' }}>
                 {t('common.clearFilters')}
               </Button>
@@ -318,7 +302,6 @@ const PaymentsPage = () => {
                     <TableCell>{t('common.date')}</TableCell>
                     <TableCell>{t('appointments.patient')}</TableCell>
                     <TableCell>{t('appointments.treatment')}</TableCell>
-                    <TableCell>{t('payments.paymentMethod')}</TableCell>
                     <TableCell align='right'>{t('common.amount')}</TableCell>
                     <TableCell>{t('payments.receivedBy')}</TableCell>
                   </TableRow>
@@ -326,7 +309,7 @@ const PaymentsPage = () => {
                 <TableBody>
                   {payments.map(payment => (
                     <TableRow key={payment.id} hover>
-                      <TableCell>{formatDate(payment.createdAt)}</TableCell>
+                      <TableCell>{formatDate(payment.paymentDate)}</TableCell>
                       <TableCell>
                         <Typography variant='body2'>{payment.invoice.patient.fullName}</Typography>
                         {payment.invoice.patient.phone && (
@@ -336,15 +319,12 @@ const PaymentsPage = () => {
                         )}
                       </TableCell>
                       <TableCell>{payment.invoice.visit.medicalCase.name}</TableCell>
-                      <TableCell>
-                        <Chip label={t(`payments.${payment.method.toLowerCase()}`)} size='small' />
-                      </TableCell>
                       <TableCell align='right'>
                         <Typography variant='body1' fontWeight={600} color='success.main'>
-                          {formatCurrency(payment.amount)}
+                          {formatCurrency(payment.amountSyp)}
                         </Typography>
                       </TableCell>
-                      <TableCell>{payment.createdBy.fullName}</TableCell>
+                      <TableCell>{payment.creator.fullName}</TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -380,7 +360,7 @@ const PaymentsPage = () => {
                     {unpaidInvoices.map(invoice => (
                       <MenuItem key={invoice.id} value={invoice.id}>
                         {invoice.patient.fullName} - {t('payments.remaining')}:{' '}
-                        {formatCurrency(parseFloat(invoice.totalAmount) - parseFloat(invoice.paidAmount))}
+                        {formatCurrency(parseFloat(invoice.totalAmountSyp) - parseFloat(invoice.paidAmountSyp))}
                       </MenuItem>
                     ))}
                   </Select>
@@ -389,13 +369,13 @@ const PaymentsPage = () => {
               {selectedInvoice && (
                 <Grid item xs={12}>
                   <Alert severity='info'>
-                    {t('payments.invoiceTotal')}: {formatCurrency(selectedInvoice.totalAmount)} | {t('payments.paid')}:{' '}
-                    {formatCurrency(selectedInvoice.paidAmount)} | {t('payments.remaining')}:{' '}
+                    {t('payments.invoiceTotal')}: {formatCurrency(selectedInvoice.totalAmountSyp)} |{' '}
+                    {t('payments.paid')}: {formatCurrency(selectedInvoice.paidAmountSyp)} | {t('payments.remaining')}:{' '}
                     {formatCurrency(remainingBalance)}
                   </Alert>
                 </Grid>
               )}
-              <Grid item xs={12} sm={6}>
+              <Grid item xs={12}>
                 <TextField
                   fullWidth
                   label={t('common.amount')}
@@ -403,22 +383,10 @@ const PaymentsPage = () => {
                   value={paymentForm.amount}
                   onChange={e => setPaymentForm({ ...paymentForm, amount: e.target.value })}
                   InputProps={{
-                    endAdornment: <InputAdornment position='end'>SYP</InputAdornment>
+                    endAdornment: <InputAdornment position='end'>ل.س</InputAdornment>
                   }}
-                  helperText={selectedInvoice ? `Max: ${remainingBalance.toLocaleString()} SYP` : ''}
+                  helperText={selectedInvoice ? `الحد الأقصى: ${remainingBalance.toLocaleString()} ل.س` : ''}
                 />
-              </Grid>
-              <Grid item xs={12} sm={6}>
-                <TextField
-                  select
-                  fullWidth
-                  label={t('payments.paymentMethod')}
-                  value={paymentForm.method}
-                  onChange={e => setPaymentForm({ ...paymentForm, method: e.target.value })}
-                >
-                  <MenuItem value='CASH'>{t('payments.cash')}</MenuItem>
-                  <MenuItem value='INSTALLMENTS'>{t('payments.installments')}</MenuItem>
-                </TextField>
               </Grid>
               <Grid item xs={12}>
                 <TextField

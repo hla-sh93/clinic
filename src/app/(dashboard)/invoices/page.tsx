@@ -31,8 +31,8 @@ import { useLanguage } from '@/contexts/LanguageContext'
 
 type Invoice = {
   id: string
-  totalAmount: string
-  paidAmount: string
+  totalAmountSyp: string
+  paidAmountSyp: string
   status: string
   createdAt: string
   patient: {
@@ -50,17 +50,21 @@ type Invoice = {
       name: string
     }
   }
-  _count: {
+  _count?: {
     payments: number
   }
 }
 
 const statusColors: Record<string, 'default' | 'primary' | 'secondary' | 'error' | 'info' | 'success' | 'warning'> = {
-  DRAFT: 'default',
-  ISSUED: 'warning',
-  PARTIALLY_PAID: 'info',
-  PAID: 'success',
-  VOID: 'error'
+  UNPAID: 'error',
+  PARTIALLY_PAID: 'warning',
+  PAID: 'success'
+}
+
+const statusLabels: Record<string, string> = {
+  UNPAID: 'غير مدفوعة',
+  PARTIALLY_PAID: 'مدفوعة جزئياً',
+  PAID: 'مدفوعة بالكامل'
 }
 
 const InvoicesPage = () => {
@@ -151,7 +155,7 @@ const InvoicesPage = () => {
   }
 
   const getBalance = (invoice: Invoice) => {
-    return parseFloat(invoice.totalAmount) - parseFloat(invoice.paidAmount)
+    return parseFloat(invoice.totalAmountSyp) - parseFloat(invoice.paidAmountSyp)
   }
 
   const clearFilters = () => {
@@ -161,8 +165,8 @@ const InvoicesPage = () => {
   // Calculate totals
   const totals = invoices.reduce(
     (acc, inv) => ({
-      total: acc.total + parseFloat(inv.totalAmount),
-      paid: acc.paid + parseFloat(inv.paidAmount),
+      total: acc.total + parseFloat(inv.totalAmountSyp),
+      paid: acc.paid + parseFloat(inv.paidAmountSyp),
       outstanding: acc.outstanding + getBalance(inv)
     }),
     { total: 0, paid: 0, outstanding: 0 }
@@ -184,29 +188,55 @@ const InvoicesPage = () => {
           {/* Summary Cards */}
           <Grid container spacing={2} sx={{ mb: 3 }}>
             <Grid item xs={12} sm={4}>
-              <Box sx={{ p: 2, bgcolor: 'background.default', borderRadius: 1 }}>
-                <Typography variant='body2' color='text.secondary'>
+              <Box
+                sx={{
+                  p: 2,
+                  bgcolor: 'rgba(115, 103, 240, 0.15)',
+                  borderRadius: 1,
+                  border: '1px solid',
+                  borderColor: 'rgba(115, 103, 240, 0.3)'
+                }}
+              >
+                <Typography variant='body2' sx={{ color: 'rgb(115, 103, 240)', opacity: 0.85 }}>
                   {t('invoices.totalInvoiced')}
                 </Typography>
-                <Typography variant='h5'>{formatCurrency(totals.total)}</Typography>
+                <Typography variant='h5' sx={{ color: 'rgb(115, 103, 240)' }}>
+                  {formatCurrency(totals.total)}
+                </Typography>
               </Box>
             </Grid>
             <Grid item xs={12} sm={4}>
-              <Box sx={{ p: 2, bgcolor: 'success.light', borderRadius: 1 }}>
-                <Typography variant='body2' color='success.dark'>
+              <Box
+                sx={{
+                  p: 2,
+                  bgcolor: 'rgba(40, 199, 111, 0.15)',
+                  borderRadius: 1,
+                  border: '1px solid',
+                  borderColor: 'rgba(40, 199, 111, 0.3)'
+                }}
+              >
+                <Typography variant='body2' sx={{ color: 'rgb(40, 199, 111)', opacity: 0.85 }}>
                   {t('invoices.totalCollected')}
                 </Typography>
-                <Typography variant='h5' color='success.dark'>
+                <Typography variant='h5' sx={{ color: 'rgb(40, 199, 111)' }}>
                   {formatCurrency(totals.paid)}
                 </Typography>
               </Box>
             </Grid>
             <Grid item xs={12} sm={4}>
-              <Box sx={{ p: 2, bgcolor: 'warning.light', borderRadius: 1 }}>
-                <Typography variant='body2' color='warning.dark'>
+              <Box
+                sx={{
+                  p: 2,
+                  bgcolor: 'rgba(234, 84, 85, 0.15)',
+                  borderRadius: 1,
+                  border: '1px solid',
+                  borderColor: 'rgba(234, 84, 85, 0.3)'
+                }}
+              >
+                <Typography variant='body2' sx={{ color: 'rgb(234, 84, 85)', opacity: 0.85 }}>
                   {t('reports.outstanding')}
                 </Typography>
-                <Typography variant='h5' color='warning.dark'>
+                <Typography variant='h5' sx={{ color: 'rgb(234, 84, 85)' }}>
                   {formatCurrency(totals.outstanding)}
                 </Typography>
               </Box>
@@ -238,10 +268,9 @@ const InvoicesPage = () => {
                     size='small'
                   >
                     <MenuItem value=''>{t('invoices.allStatuses')}</MenuItem>
-                    <MenuItem value='ISSUED'>{t('invoices.issued')}</MenuItem>
+                    <MenuItem value='UNPAID'>{t('invoices.unpaid')}</MenuItem>
                     <MenuItem value='PARTIALLY_PAID'>{t('invoices.partiallyPaid')}</MenuItem>
                     <MenuItem value='PAID'>{t('invoices.paid')}</MenuItem>
-                    <MenuItem value='VOID'>{t('invoices.void')}</MenuItem>
                   </TextField>
                 </Grid>
                 <Grid item xs={12} sm={2}>
@@ -333,14 +362,14 @@ const InvoicesPage = () => {
                         <TableCell>{invoice.visit.dentist.fullName}</TableCell>
                         <TableCell>
                           <Chip
-                            label={t(`invoices.${invoice.status.toLowerCase()}`)}
+                            label={statusLabels[invoice.status] || invoice.status}
                             color={statusColors[invoice.status] || 'default'}
                             size='small'
                           />
                         </TableCell>
-                        <TableCell align='right'>{formatCurrency(invoice.totalAmount)}</TableCell>
+                        <TableCell align='right'>{formatCurrency(invoice.totalAmountSyp)}</TableCell>
                         <TableCell align='right' sx={{ color: 'success.main' }}>
-                          {formatCurrency(invoice.paidAmount)}
+                          {formatCurrency(invoice.paidAmountSyp)}
                         </TableCell>
                         <TableCell align='right' sx={{ color: balance > 0 ? 'error.main' : 'text.primary' }}>
                           {formatCurrency(balance)}

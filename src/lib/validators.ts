@@ -104,8 +104,7 @@ export const updateAppointmentSchema = z.object({
 
 export const createPaymentSchema = z.object({
   invoiceId: z.string().uuid(),
-  amountSyp: z.number().positive('Amount must be positive'),
-  method: PaymentMethodEnum.default('CASH'),
+  amountSyp: z.number().positive('المبلغ يجب أن يكون أكبر من صفر'),
   paymentDate: z.string().datetime()
 })
 
